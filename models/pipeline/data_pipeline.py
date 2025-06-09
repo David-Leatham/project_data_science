@@ -205,6 +205,13 @@ if y.isnull().any():
         "Überprüfe die Kategorien (erwartet: 'FRAUD', 'NORMAL') und das Mapping."
     )
 
+# Extract the raw, untransformed damage values
+# Ensure it's aligned with y and X by using the same DataFrame and index
+Z_damage = transactions_for_pipeline['damage'].copy()
+
+# --- Handle NaN values in Z_damage by setting them to 0 ---
+Z_damage.fillna(0, inplace=True)
+
 # Definiert die Merkmalsmatrix X durch Entfernen der 'label'-Spalte.
 X = transactions_for_pipeline.drop('label', axis=1)
 
