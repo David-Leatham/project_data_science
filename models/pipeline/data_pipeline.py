@@ -473,7 +473,7 @@ time_feature_processing_pipeline = Pipeline(steps=[
 # Feedback-Features: Kategorisierung und One-Hot-Encoding.
 feedback_transformer = FeedbackBinnerOHE()
 
-transaction_line_stats_transformer = TransactionLineFeatures()
+transaction_line_stats_transformer = EnhancedTransactionLineFeatures()
 
 # Zusammenbau des ColumnTransformers
 preprocessor = ColumnTransformer(
