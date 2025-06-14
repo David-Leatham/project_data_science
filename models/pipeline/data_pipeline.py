@@ -173,7 +173,7 @@ class FeedbackBinnerOHE(BaseEstimator, TransformerMixin):
         # Gibt die Namen der erzeugten Features zurück.
         return self.feature_names_out_
     
-class TransactionLineFeatures(BaseEstimator, TransformerMixin):
+class TransactionLineFeatures_Bsp(BaseEstimator, TransformerMixin):
     """
     Custom transformer for 'transaction_lines_details'.
     Calculates average and median 'price' from transaction lines.
@@ -220,322 +220,8 @@ class TransactionLineFeatures(BaseEstimator, TransformerMixin):
         return self.feature_names_out_
     
 
-
 class TransactionLineFeatures(BaseEstimator, TransformerMixin):
-    """
-    Custom transformer for 'transaction_lines_details'.
-    Berechnet aggregierte Features aus jeder Transaktionszeile (Produktdaten), um verdächtige Muster für Fraud-Erkennung zu identifizieren.
-    Die Features werden transaktionsweise berechnet und können direkt in ML-Pipelines verwendet werden.
-
-    **Ziel des maschinellen Lernens:**
-    - **Fraud-Erkennung:** Vorhersage, ob eine Transaktion "FRAUD" (Betrug) oder "NORMAL" ist.
-    - **Signalstärke:** Die konstruierten Features sollen verdächtige Muster (z.B. Preisabweichungen, häufige Stornierungen, ungewöhnliche Rabatte) verstärken, damit das ML-Modell sie besser erkennen kann.
-    """
-
     def __init__(self):
-        # Liste der Feature-Namen, die berechnet werden
-        self.feature_names_out_ = [
-            'ft_avg_line_price',               # Durchschnittlicher Listenpreis pro Transaktion
-            'ft_median_line_price',            # Median-Preis pro Transaktion
-            'ft_avg_discount_ratio',           # Durchschnittlicher Rabattanteil pro Transaktion
-            'ft_avg_price_delta',              # Durchschnittliche Abweichung zwischen Preis und erwartetem Preis
-            'ft_avg_unit_price_deviation',     # Durchschnittliche Abweichung des Einzelpreises vom Kategoriendurchschnitt
-            'ft_frac_high_risk',               # Anteil der Hochrisiko-Artikel pro Transaktion
-            'ft_frac_voided',                  # Anteil der stornierten Artikel pro Transaktion
-            'ft_frac_age_restricted',          # Anteil der altersbeschränkten Artikel pro Transaktion
-            'ft_frac_zero_weight',             # Anteil der Artikel mit Gewicht = 0 (unplausibel)
-            'ft_avg_popularity_deviation'      # Durchschnittliche Abweichung der Popularität vom Transaktionsdurchschnitt
-        ]
-        # Definition der Hochrisiko-Kategorien (kann angepasst werden)
-        self.high_risk_categories = {'SNACKS'}
-
-    def fit(self, X, y=None):
-        """
-        Keine Anpassung nötig, da wir keine globalen Parameter lernen.
-        """
-        return self
-
-    def _calculate_features(self, transaction_lines):
-        """
-        Berechnet für eine Liste von Produktzeilen (eine Transaktion) alle relevanten Features.
-        :param transaction_lines: Liste von Dictionaries mit Produktdaten
-        :return: Liste der berechneten Features (in Reihenfolge von feature_names_out_)
-        """
-        if not isinstance(transaction_lines, (list, np.ndarray)) or len(transaction_lines) == 0:
-            # Keine Daten → alle Features auf NaN
-            return [np.nan] * len(self.feature_names_out_)
-
-        # Konvertiere die Liste in einen DataFrame für einfache Berechnungen
-        lines = pd.DataFrame([line for line in transaction_lines if isinstance(line, dict)])
-        n = len(lines)
-        if n == 0:
-            return [np.nan] * len(self.feature_names_out_)
-
-        # 1. Durchschnittlicher und Median-Preis pro Transaktion
-        # **Warum:** Ungewöhnlich hohe oder niedrige Preise können auf Betrug hinweisen.
-        prices = lines['price'].dropna()
-        avg_price = prices.mean() if not prices.empty else np.nan
-        median_price = prices.median() if not prices.empty else np.nan
-
-        # 2. Durchschnittlicher Rabattanteil pro Transaktion
-        # **Warum:** Ungewöhnlich hohe Rabatte sind ein klassisches Betrugssignal.
-        if 'discount_amount' in lines and 'price' in lines:
-            discount_ratio = (lines['discount_amount'] / lines['price']).replace([np.inf, -np.inf], np.nan)
-            avg_discount_ratio = discount_ratio.mean()
-        else:
-            avg_discount_ratio = np.nan
-
-        # 3. Durchschnittliche Abweichung zwischen Preis und erwartetem Preis
-        # **Warum:** Wenn jemand deutlich weniger zahlt als erwartet, ist das verdächtig.
-        if 'expected_price' in lines and 'price' in lines:
-            price_delta = (lines['price'] - lines['expected_price']).replace([np.inf, -np.inf], np.nan)
-            avg_price_delta = price_delta.mean()
-        else:
-            avg_price_delta = np.nan
-
-        # 4. Durchschnittliche Abweichung des Einzelpreises vom Kategoriendurchschnitt
-        # **Warum:** Ungewöhnliche Einzelpreise (z.B. 1kg Äpfel zu 0.5€/kg statt 2.99€/kg) sind ein Fraud-Signal.
-        if 'price_per_unit' in lines and 'category' in lines:
-            cat_means = lines.groupby('category')['price_per_unit'].transform('mean')
-            unit_price_deviation = (lines['price_per_unit'] - cat_means).abs()
-            avg_unit_price_deviation = unit_price_deviation.mean()
-        else:
-            avg_unit_price_deviation = np.nan
-
-        # 5. Anteil der Hochrisiko-Artikel pro Transaktion
-        # **Warum:** Bestimmte Kategorien (z.B. SNACKS) werden häufiger gestohlen.
-        if 'category' in lines:
-            frac_high_risk = lines['category'].isin(self.high_risk_categories).mean()
-        else:
-            frac_high_risk = np.nan
-
-        # 6. Anteil der stornierten Artikel pro Transaktion
-        # **Warum:** Häufige Stornierungen sind ein starkes Fraud-Signal.
-        if 'was_voided' in lines:
-            frac_voided = lines['was_voided'].astype(float).mean()
-        else:
-            frac_voided = np.nan
-
-        # 7. Anteil der altersbeschränkten Artikel pro Transaktion
-        # **Warum:** Transaktionen mit altersbeschränkten Artikeln sind seltener Fraud (wichtiger Negativ-Indikator).
-        if 'age_restricted' in lines:
-            frac_age_restricted = lines['age_restricted'].astype(float).mean()
-        else:
-            frac_age_restricted = np.nan
-
-        # 8. Anteil der Artikel mit Gewicht = 0 (unplausibel)
-        # **Warum:** Gewicht = 0 bei Stückware ist unplausibel und kann auf Fehler oder Betrug hinweisen.
-        if 'weight' in lines:
-            frac_zero_weight = (lines['weight'] == 0).mean()
-        else:
-            frac_zero_weight = np.nan
-
-        # 9. Durchschnittliche Abweichung der Popularität vom Transaktionsdurchschnitt
-        # **Warum:** Seltene Artikel (niedrige Popularität) werden öfter gestohlen oder falsch gescannt.
-        if 'popularity' in lines:
-            avg_popularity_deviation = (lines['popularity'] - lines['popularity'].mean()).abs().mean()
-        else:
-            avg_popularity_deviation = np.nan
-
-        return [
-            avg_price,
-            median_price,
-            avg_discount_ratio,
-            avg_price_delta,
-            avg_unit_price_deviation,
-            frac_high_risk,
-            frac_voided,
-            frac_age_restricted,
-            frac_zero_weight,
-            avg_popularity_deviation
-        ]
-
-    def transform(self, X, y=None):
-        """
-        Transformiert den DataFrame mit 'transaction_lines_details' in einen DataFrame mit den berechneten Features.
-        :param X: DataFrame mit der Spalte 'transaction_lines_details'
-        :param y: Optional, nicht benötigt
-        :return: DataFrame mit den berechneten Features
-        """
-        if isinstance(X, pd.Series):
-            X_df = X.to_frame()
-        elif isinstance(X, np.ndarray):
-            X_df = pd.DataFrame(X, columns=['transaction_lines_details'])
-        else:
-            X_df = X.copy()
-
-        # Berechne für jede Zeile die Features
-        stats = X_df.iloc[:, 0].apply(self._calculate_features)
-
-        # Erstelle einen DataFrame mit den neuen Features
-        df_transformed = pd.DataFrame(stats.tolist(), index=X_df.index, columns=self.feature_names_out_)
-
-        # Ersetze NaN durch 0 (kann je nach Anwendungsfall angepasst werden)
-        df_transformed.fillna(0, inplace=True)
-
-        return df_transformed
-
-    def get_feature_names_out(self, input_features=None):
-        """
-        Gibt die Namen der berechneten Features zurück.
-        :param input_features: Nicht benötigt
-        :return: Liste der Feature-Namen
-        """
-        return self.feature_names_out_
-
-
-
-class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
-    """
-    Erweiterte Feature-Engineering-Klasse für Transaction-Lines.
-    Berechnet zahlreiche verdächtige Muster für Fraud-Erkennung an Self-Checkout-Kassen.
-    Die Features werden aus den Produktdetails jeder Transaktion berechnet und aggregiert.
-    Ziel: Verdächtige Transaktionen (z.B. Preisabweichungen, häufige Stornierungen, ungewöhnliche Rabatte)
-          für ML-Modelle sichtbar machen.
-    """
-
-    def __init__(self):
-        # Liste der Ausgabe-Features, die berechnet werden
-        self.feature_names_out_ = [
-            # Pricing & Discounts
-            'ft_avg_discount_ratio',         # Durchschnittlicher Rabattanteil pro Transaktion
-            'ft_max_price_delta',            # Maximale Abweichung zwischen Preis und erwartetem Preis
-            'ft_unit_price_deviation',       # Durchschnittliche Abweichung des Einzelpreises vom Kategoriendurchschnitt
-            
-            # Product Classifications
-            'ft_high_risk_ratio',            # Anteil der Hochrisikokategorie-Artikel pro Transaktion
-            'ft_luxury_item_count',          # Anzahl der Luxusartikel pro Transaktion
-            
-            # Weight & Quantity
-            'ft_weight_discrepancy',         # Durchschnittliche Abweichung des Gewichts vom erwarteten Gewicht
-            'ft_zero_weight_ratio',          # Anteil der Artikel mit Gewicht = 0
-            
-            # Age Restrictions
-            'ft_mixed_age_flag',             # Transaktion enthält sowohl altersbeschränkte als auch nicht-altersbeschränkte Artikel
-            'ft_missing_age_restriction',    # Anteil der Hochrisikoartikel ohne Alterskennzeichnung
-            
-            # Void Patterns
-            'ft_void_time_variance',         # Varianz der Zeit zwischen Scan und Storno (wenn vorhanden)
-            'ft_void_high_risk_ratio',       # Anteil der stornierten Hochrisikoartikel
-            
-            # Popularity & Newness
-            'ft_popularity_deviation',       # Durchschnittliche Abweichung der Popularität vom Transaktionsdurchschnitt
-            'ft_new_product_ratio'           # Anteil der neu eingeführten Produkte
-        ]
-        
-        # Konfigurierbare Parameter
-        self.high_risk_categories = {'SNACKS'}
-        self.luxury_price_threshold = 50  # Euro, ab diesem Preis gilt ein Artikel als Luxusartikel
-        self.new_product_days = 30        # Tage, ab wann ein Produkt nicht mehr als "neu" gilt
-
-    def fit(self, X, y=None):
-        # Kein Training nötig, da keine globalen Parameter gelernt werden
-        return self
-
-    def _calculate_features(self, transaction_lines):
-        """
-        Berechnet die Features für eine Liste von Produktzeilen (eine Transaktion).
-        """
-        if not isinstance(transaction_lines, (list, np.ndarray)) or len(transaction_lines) == 0:
-            return [np.nan] * len(self.feature_names_out_)
-
-        # Konvertiere die Liste in einen DataFrame für einfache Berechnungen
-        lines = pd.DataFrame([line for line in transaction_lines if isinstance(line, dict)])
-        if lines.empty:
-            return [np.nan] * len(self.feature_names_out_)
-
-        features = []
-        
-        # A) Pricing & Discounts
-        # Durchschnittlicher Rabattanteil pro Transaktion
-        discount_ratio = lines['discount_amount'] / lines['price']
-        features.append(discount_ratio.mean())
-        # Maximale Abweichung zwischen Preis und erwartetem Preis
-        features.append((lines['price'] - lines['expected_price']).max())
-        # Durchschnittliche Abweichung des Einzelpreises vom Kategoriendurchschnitt
-        cat_means = lines.groupby('category')['price_per_unit'].transform('mean')
-        unit_price_deviation = (lines['price_per_unit'] - cat_means).abs()
-        features.append(unit_price_deviation.mean())
-        
-        # B) Product Classifications
-        # Anteil der Hochrisikokategorie-Artikel pro Transaktion
-        features.append(lines['category'].isin(self.high_risk_categories).mean())
-        # Anzahl der Luxusartikel (Preis > Threshold) pro Transaktion
-        features.append((lines['price'] > self.luxury_price_threshold).sum())
-        
-        # C) Weight & Quantity
-        # Durchschnittliche Abweichung des Gewichts vom erwarteten Gewicht
-        # Annahme: erwartetes Gewicht = pieces_or_weight * Mediangewicht der Produktfamilie
-        weight_discrepancy = lines['weight'] - lines['pieces_or_weight'] * lines.groupby('base_product_id')['weight'].transform('median')
-        features.append(weight_discrepancy.abs().mean())
-        # Anteil der Artikel mit Gewicht = 0
-        features.append((lines['weight'] == 0).mean())
-        
-        # D) Age Restrictions
-        # Transaktion enthält sowohl altersbeschränkte als auch nicht-altersbeschränkte Artikel
-        age_flags = lines['age_restricted'].astype(bool)
-        features.append((age_flags.any() & ~age_flags.all()).astype(int))
-        # Anteil der Hochrisikoartikel ohne Alterskennzeichnung
-        mask = lines['category'].isin(self.high_risk_categories)
-        features.append(lines[mask]['age_restricted'].eq(0).mean())
-        
-        # E) Void Patterns
-        # Varianz der Zeit zwischen Scan und Storno (wenn vorhanden)
-        if 'void_timestamp' in lines:
-            time_diff = (pd.to_datetime(lines['void_timestamp']) - 
-                        pd.to_datetime(lines['scan_timestamp'])).dt.total_seconds()
-            features.append(time_diff.var())
-        else:
-            features.append(0)
-        # Anteil der stornierten Hochrisikoartikel
-        mask = (lines['was_voided'] == 1)
-        features.append(lines[mask]['category'].isin(self.high_risk_categories).mean())
-        
-        # F) Popularity & Newness
-        # Durchschnittliche Abweichung der Popularität vom Transaktionsdurchschnitt
-        features.append((lines['popularity'] - lines['popularity'].median()).abs().mean())
-        # Anteil der neu eingeführten Produkte (wenn vorhanden)
-        if 'product_launch_date' in lines:
-            days_since_launch = (pd.to_datetime('now') - pd.to_datetime(lines['product_launch_date'])).dt.days
-            features.append((days_since_launch < self.new_product_days).mean())
-        else:
-            features.append(0)
-
-        # Ersetze NaN durch 0 für Robustheit
-        return [0 if np.isnan(x) else x for x in features]
-
-    def transform(self, X, y=None):
-        """
-        Transformiert den DataFrame mit 'transaction_lines_details' in einen DataFrame mit den berechneten Features.
-        """
-        if isinstance(X, pd.Series):
-            X_df = X.to_frame()
-        else:
-            X_df = X.copy()
-
-        # Berechne für jede Zeile die Features
-        stats = X_df.iloc[:, 0].apply(self._calculate_features)
-        # Erstelle einen DataFrame mit den neuen Features
-        df_transformed = pd.DataFrame(
-            stats.tolist(), 
-            index=X_df.index, 
-            columns=self.feature_names_out_
-        ).fillna(0)
-        
-        return df_transformed
-
-    def get_feature_names_out(self, input_features=None):
-        """
-        Gibt die Namen der berechneten Features zurück.
-        """
-        return self.feature_names_out_
-
-
-
-
-class TransactionLineFeatures1(BaseEstimator, TransformerMixin):
-    def __init__(self):
-        # Ursprüngliche Feature-Namen
         self.feature_names_out_ = [
             'ft_avg_line_price',               # Durchschnittlicher Listenpreis pro Transaktion
             'ft_median_line_price',            # Median-Preis pro Transaktion
@@ -549,9 +235,9 @@ class TransactionLineFeatures1(BaseEstimator, TransformerMixin):
             'ft_avg_popularity_deviation'      # Durchschnittliche Abweichung der Popularität vom Transaktionsdurchschnitt
         ]
         # High-Risk-Kategorien (kann angepasst werden)
-        self.high_risk_categories = {'SNACKS', 'TOBACCO', 'ALCOHOL'}
-        # Liste der gewünschten Produktklassen (One-Hot-Features)
-        self.product_classes_ = [
+        self.high_risk_categories = {'SNACKS', 'FRUITS_VEGETABLES_PIECES', 'CONVENIENCE'}
+        # Liste der gewünschten Kategorien (One-Hot-Features)
+        self.categories_ = [
             'TOBACCO', 'ALCOHOL', 'PERSONAL_CARE', 'LONG_SHELF_LIFE',
             'FROZEN_GOODS', 'HOUSEHOLD', 'BEVERAGES', 'BAKERY',
             'FRUITS_VEGETABLES_PIECES', 'DAIRY', 'CONVENIENCE',
@@ -559,21 +245,21 @@ class TransactionLineFeatures1(BaseEstimator, TransformerMixin):
         ]
 
     def fit(self, X, y=None):
-        # Optional: Produktklassen aus den Daten ermitteln, hier aber explizit gesetzt
+        # Optional: Kategorien aus den Daten ermitteln, hier aber explizit gesetzt
         return self
 
     def _calculate_features(self, transaction_lines):
         features = []
         if not isinstance(transaction_lines, (list, np.ndarray)) or len(transaction_lines) == 0:
             features = [np.nan] * len(self.feature_names_out_)
-            features += [0] * len(self.product_classes_)
+            features += [0] * len(self.categories_)
             return features
 
         lines = pd.DataFrame([line for line in transaction_lines if isinstance(line, dict)])
         n = len(lines)
         if n == 0:
             features = [np.nan] * len(self.feature_names_out_)
-            features += [0] * len(self.product_classes_)
+            features += [0] * len(self.categories_)
             return features
 
         # 1. Ursprüngliche Features berechnen
@@ -638,13 +324,13 @@ class TransactionLineFeatures1(BaseEstimator, TransformerMixin):
             avg_popularity_deviation
         ]
 
-        # 2. One-Hot-Encoding der Produktklassen
-        if 'product_class' in lines:
-            present_classes = set(lines['product_class'].unique())
-            for pc in self.product_classes_:
-                features.append(int(pc in present_classes))
+        # 2. One-Hot-Encoding der Kategorien
+        if 'category' in lines:
+            present_categories = set(lines['category'].unique())
+            for cat in self.categories_:
+                features.append(int(cat in present_categories))
         else:
-            features += [0] * len(self.product_classes_)
+            features += [0] * len(self.categories_)
 
         return features
 
@@ -658,7 +344,7 @@ class TransactionLineFeatures1(BaseEstimator, TransformerMixin):
 
         stats = X_df.iloc[:, 0].apply(self._calculate_features)
         feature_names = self.feature_names_out_.copy()
-        feature_names += [f'ft_has_product_class_{pc}' for pc in self.product_classes_]
+        feature_names += [f'ft_has_category_{cat}' for cat in self.categories_]
 
         df_transformed = pd.DataFrame(stats.tolist(), index=X_df.index, columns=feature_names)
         df_transformed.fillna(0, inplace=True)
@@ -666,10 +352,9 @@ class TransactionLineFeatures1(BaseEstimator, TransformerMixin):
 
     def get_feature_names_out(self, input_features=None):
         feature_names = self.feature_names_out_.copy()
-        feature_names += [f'ft_has_product_class_{pc}' for pc in self.product_classes_]
+        feature_names += [f'ft_has_category_{cat}' for cat in self.categories_]
         return feature_names
-
-class EnhancedTransactionLineFeatures1(BaseEstimator, TransformerMixin):
+class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
     """
     Diese Klasse kombiniert klassische und erweiterte Features für Transaktionszeilen.
     Ziel: Verdächtige Muster für Fraud-Erkennung an Self-Checkout-Kassen sichtbar machen.
@@ -778,7 +463,7 @@ class EnhancedTransactionLineFeatures1(BaseEstimator, TransformerMixin):
             avg_unit_price_deviation = np.nan
 
         # 3. Kategorien-Features
-        # Warum: Hochrisikokategorien (z.B. SNACKS, ALCOHOL, TOBACCO) sind besonders betrugsanfällig
+        # Warum: Hochrisikokategorien (z.B. SNACKS.etc) sind besonders betrugsanfällig
         if 'category' in lines:
             frac_high_risk = lines['category'].isin(self.high_risk_categories).mean()
         else:
@@ -910,6 +595,8 @@ class EnhancedTransactionLineFeatures1(BaseEstimator, TransformerMixin):
 
     def get_feature_names_out(self, input_features=None):
         return self.feature_names_out_
+
+
 
 
 
