@@ -30,6 +30,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, MinMaxScaler, FunctionTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
+from datetime import datetime
 
 
 
@@ -222,19 +223,12 @@ class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
             'ft_avg_price_delta',           # Durchschnittliche Abweichung von erwartetem zu tatsächlichem Preis
             'ft_avg_unit_price_deviation',  # Durchschnittliche Abweichung vom Kategoriendurchschnitt im Preis pro Einheit
             'ft_frac_high_risk',            # Anteil an Artikeln aus Hochrisiko-Kategorien (z. B. Snacks)
-            'ft_frac_voided',               # Anteil der Artikel, die storniert wurden (z. B. durch Kundeneingriff)
             'ft_frac_age_restricted',       # Anteil der Artikel mit Altersbeschränkung
-            'ft_frac_zero_weight',          # Anteil der Artikel mit Gewicht = 0 (häufig unplausibel)
-            'ft_avg_popularity_deviation',  # Ø Abweichung der Beliebtheit vom Mittelwert in der Transaktion
-
+            
             # === Erweiterte Features ===
             'ft_max_price_delta',           # Größte Preisabweichung eines Artikels innerhalb der Transaktion
-            'ft_weight_discrepancy',        # Ø Abweichung zwischen erwartetem und tatsächlichem Gewicht pro Artikel
             'ft_mixed_age_flag',            # Boolesches Flag: Mischung aus altersbeschränkten und nicht-beschränkten Artikeln
             'ft_missing_age_restriction',   # Anteil riskanter Produkte ohne Alterskennzeichnung
-            'ft_void_time_variance',        # Zeitliche Streuung (Varianz) der Differenz zwischen Scan und Storno
-            'ft_void_high_risk_ratio',      # Anteil stornierter Artikel, die Hochrisiko-Kategorien angehören
-            'ft_popularity_deviation',      # Ø Abweichung der Beliebtheit vom Median der Transaktion
             'ft_new_product_ratio'          # Anteil der Artikel mit kurzer Markteinführungszeit (z. B. < 30 Tage)
         ]
 
@@ -291,35 +285,14 @@ class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
         # Anteil riskanter Kategorien
         frac_high_risk = lines['category'].isin(self.high_risk_categories).mean() if 'category' in lines else 0
 
-        # Anteil stornierter Positionen
-        frac_voided = lines['was_voided'].astype(float).mean() if 'was_voided' in lines else 0
-
         # Anteil altersbeschränkter Produkte
         frac_age_restricted = lines['age_restricted'].astype(float).mean() if 'age_restricted' in lines else 0
-
-        # Anteil Positionen mit Gewicht = 0
-        frac_zero_weight = (lines['weight'] == 0).mean() if 'weight' in lines else 0
-
-        # Abweichung zur durchschnittlichen Beliebtheit
-        if 'popularity' in lines:
-            avg_popularity_deviation = (lines['popularity'] - lines['popularity'].mean()).abs().mean()
-            popularity_deviation = (lines['popularity'] - lines['popularity'].median()).abs().mean()
-        else:
-            avg_popularity_deviation = 0
-            popularity_deviation = 0
 
         # Max. Abweichung vom erwarteten Preis
         if 'expected_price' in lines and 'price' in lines:
             max_price_delta = np.nanmax(lines['price'] - lines['expected_price'])
         else:
             max_price_delta = 0
-
-        # Diskrepanz zwischen erwartetem und tatsächlichem Gewicht
-        if all(col in lines for col in ['weight', 'pieces_or_weight', 'base_product_id']):
-            expected_weight = lines['pieces_or_weight'] * lines.groupby('base_product_id')['weight'].transform('median')
-            weight_discrepancy = np.nanmean(np.abs(lines['weight'] - expected_weight))
-        else:
-            weight_discrepancy = 0
 
         # Flag, ob eine Mischung aus altersbeschränkten und nicht-altersbeschränkten Produkten vorliegt
         if 'age_restricted' in lines:
@@ -334,20 +307,6 @@ class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
             missing_age_restriction = lines[risky]['age_restricted'].eq(0).mean()
         else:
             missing_age_restriction = 0
-
-        # Varianz der Zeitdifferenz zwischen Scan und Storno
-        if 'void_timestamp' in lines and 'scan_timestamp' in lines:
-            time_diff = (pd.to_datetime(lines['void_timestamp']) - pd.to_datetime(lines['scan_timestamp'])).dt.total_seconds()
-            void_time_variance = time_diff.var()
-        else:
-            void_time_variance = 0
-
-        # Anteil stornierter Positionen aus risikoreichen Kategorien
-        if 'was_voided' in lines and 'category' in lines:
-            voided = lines['was_voided'] == 1
-            void_high_risk_ratio = lines[voided]['category'].isin(self.high_risk_categories).mean()
-        else:
-            void_high_risk_ratio = 0
 
         # Anteil neuer Produkte basierend auf Launch-Datum
         if 'product_launch_date' in lines:
@@ -367,10 +326,8 @@ class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
         features = [
             avg_price, median_price, avg_discount_ratio,
             avg_price_delta, avg_unit_price_deviation, frac_high_risk,
-            frac_voided, frac_age_restricted, frac_zero_weight,
-            avg_popularity_deviation, max_price_delta, weight_discrepancy,
-            mixed_age_flag, missing_age_restriction, void_time_variance,
-            void_high_risk_ratio, popularity_deviation, new_product_ratio
+            frac_age_restricted, max_price_delta,
+            mixed_age_flag, missing_age_restriction, new_product_ratio
         ] + category_features
 
         return [0 if pd.isna(x) else x for x in features]
@@ -412,7 +369,7 @@ class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
 
         # Optional: Normalisierung mit MinMaxScaler
         if self.normalize:
-            numerical = self.feature_names_out_[:18]  # Nur numerische Features skalieren
+            numerical = [f for f in self.feature_names_out_ if not f.startswith('ft_has_category_')]
             scaler = MinMaxScaler()
             df_transformed[numerical] = scaler.fit_transform(df_transformed[numerical])
 
