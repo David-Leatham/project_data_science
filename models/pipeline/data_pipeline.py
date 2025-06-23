@@ -1,22 +1,3 @@
-'''
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransformer
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from pathlib import Path
-from sklearn.base import BaseEstimator, TransformerMixin
-import pandas as pd
-import numpy as np
-from datetime import datetime
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-import pandas as pd
-import numpy as np
-'''
 # Standardbibliotheken
 from pathlib import Path
 from datetime import datetime
