@@ -285,6 +285,8 @@ feature_name_mapping = {
     'transaction_lines_stats__ft_frac_high_risk': 'Fraction of High-Risk Items'
 }
 
+# --- High-Risk Categories for Offending Products ---
+high_risk_categories = {'SNACKS', 'FRUITS_VEGETABLES_PIECES', 'CONVENIENCE'}
 
 # --- FastAPI Application ---
 app = FastAPI(
@@ -331,7 +333,6 @@ async def predict_fraud(request: FraudPredictionRequest):
             feature_value = preprocessed_features_df.iloc[0, i]
             shap_value = shap_values_for_fraud[i]
             
-            # Only include features with a noticeable impact
             if abs(shap_value) > 0.01:
                 descriptive_name = feature_name_mapping.get(feature_name, feature_name)
                 feature_impacts.append({
@@ -340,32 +341,38 @@ async def predict_fraud(request: FraudPredictionRequest):
                     "shap_value": shap_value
                 })
 
-        # Sort by absolute SHAP value for the detailed list
         feature_importance_list = sorted(feature_impacts, key=lambda x: abs(x['shap_value']), reverse=True)
 
         # --- Initialize response variables ---
         estimated_damage = 0.0
         human_readable_reason = ""
+        offending_products = []
         
         if is_fraud:
             # --- Regression Prediction ---
             predicted_raw_damage = regressor_model.predict(preprocessed_features)
             estimated_damage = round(max(0, predicted_raw_damage[0]), 2)
 
-            # Create a human-readable reason from the top 3 features pushing towards fraud
+            # --- Identify Offending Products ---
+            offending_products_set = set()
+            for line in request.transaction_lines:
+                if line.category in high_risk_categories:
+                    offending_products_set.add(line.category)
+            offending_products = list(offending_products_set)
+
+            # --- Create Human-Readable Reason ---
             top_fraud_features_desc = []
             for item in feature_importance_list[:3]:
                 desc = item['feature']
-                if 'Price' in desc and item['value'] < 1:
-                    desc += " (very low)"
-                elif 'Amount' in desc and item['value'] < 1:
-                     desc += " (very low)"
-                elif 'Cash' in desc and item['value'] == 1:
-                    desc = "Payment with Cash"
-                elif 'Time of Day' in desc and item['value'] > 0.5:
-                     desc = "Late Night Transaction"
+                if 'Price' in desc and item['value'] < 1: desc += " (very low)"
+                elif 'Amount' in desc and item['value'] < 1: desc += " (very low)"
+                elif 'Cash' in desc and item['value'] == 1: desc = "Payment with Cash"
+                elif 'Time of Day' in desc and item['value'] > 0.5: desc = "Late Night Transaction"
                 top_fraud_features_desc.append(desc)
+            
             human_readable_reason = "High fraud risk detected. Key factors: " + "; ".join(top_fraud_features_desc) + "."
+            if offending_products:
+                human_readable_reason += f" Suspicious item categories include: {', '.join(offending_products)}."
 
         else: # NOT FRAUD
             # Sort by SHAP value to find the most protective features (most negative)
@@ -374,13 +381,9 @@ async def predict_fraud(request: FraudPredictionRequest):
             top_protective_features_desc = []
             for item in protective_features_sorted[:3]:
                 desc = item['feature']
-                # Add context for non-fraudulent reasons
-                if 'Cash' in desc and item['value'] == 0:
-                    desc = "Payment with Card"
-                elif 'Time of Day' in desc and item['value'] < -0.5:
-                     desc = "Normal Business Hours"
-                elif 'Price' in desc and item['value'] > 10:
-                     desc += " (high)"
+                if 'Cash' in desc and item['value'] == 0: desc = "Payment with Card"
+                elif 'Time of Day' in desc and item['value'] < -0.5: desc = "Normal Business Hours"
+                elif 'Price' in desc and item['value'] > 10: desc += " (high)"
                 top_protective_features_desc.append(desc)
             
             human_readable_reason = "Low fraud risk. Key protective factors: " + "; ".join(top_protective_features_desc) + "."
@@ -389,7 +392,7 @@ async def predict_fraud(request: FraudPredictionRequest):
         explanation = Explanation(
             human_readable_reason=human_readable_reason,
             feature_importance=[FeatureImportance(**item) for item in feature_importance_list],
-            offending_products=[]
+            offending_products=offending_products
         )
 
         # --- Response Formatting ---
