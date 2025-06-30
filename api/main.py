@@ -3,7 +3,7 @@ import glob
 import sys
 import types
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 from uuid import UUID
 
 import joblib
@@ -199,7 +199,7 @@ try:
     latest_preprocessor_path = max(preprocessor_list, key=os.path.getctime)
     preprocessor = joblib.load(latest_preprocessor_path)
 
-    # NEW: Create the SHAP explainer at startup
+    # Create the SHAP explainer at startup
     shap_explainer = shap.TreeExplainer(classifier_model)
     print("Models, preprocessor, and SHAP explainer loaded successfully.")
 
@@ -210,8 +210,14 @@ except Exception as e:
 
 # --- API Data Models ---
 
+class FeatureImportance(BaseModel):
+    feature: str
+    value: float
+    shap_value: float
+
 class Explanation(BaseModel):
     human_readable_reason: Optional[str] = None
+    feature_importance: Optional[List[FeatureImportance]] = None
     offending_products: Optional[List[str]] = None
 
 class FraudPrediction(BaseModel):
@@ -265,6 +271,21 @@ class FraudPredictionRequest(BaseModel):
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat(), UUID: lambda v: str(v)}
 
+# --- Feature Name Mapping for Human-Readable Explanations ---
+feature_name_mapping = {
+    'num_log_center__total_amount': 'Total Amount',
+    'num_log_center__n_lines': 'Number of Items',
+    'onehot_cat__payment_medium_CASH': 'Payment Method (Cash)',
+    'time_features__ft_hour_cos': 'Time of Day (Late Night/Early Morning)',
+    'transaction_lines_stats__ft_avg_line_price': 'Average Price per Item',
+    'transaction_lines_stats__ft_has_category_SNACKS': 'Contains Snacks',
+    'transaction_lines_stats__ft_has_category_CONVENIENCE': 'Contains Convenience Items',
+    'transaction_lines_stats__ft_has_category_FRUITS_VEGETABLES_PIECES': 'Contains Fruit/Veg (by piece)',
+    'time_features__ft_duration_seconds_log': 'Transaction Duration',
+    'transaction_lines_stats__ft_frac_high_risk': 'Fraction of High-Risk Items'
+}
+
+
 # --- FastAPI Application ---
 app = FastAPI(
     title="SCO Fraud REST API",
@@ -290,7 +311,8 @@ async def predict_fraud(request: FraudPredictionRequest):
 
         # --- Preprocessing ---
         preprocessed_features = preprocessor.transform(input_df)
-        preprocessed_features_df = pd.DataFrame(preprocessed_features, columns=preprocessor.get_feature_names_out())
+        feature_names = preprocessor.get_feature_names_out()
+        preprocessed_features_df = pd.DataFrame(preprocessed_features, columns=feature_names)
 
         # --- Classification Prediction ---
         fraud_probability = classifier_model.predict_proba(preprocessed_features)[0][1]
@@ -308,33 +330,49 @@ async def predict_fraud(request: FraudPredictionRequest):
             # --- SHAP Value Explanation ---
             shap_values = shap_explainer.shap_values(preprocessed_features_df)
             
-            # The shap_values output can be a list of two arrays (for class 0 and 1)
-            # or a single numpy array (for the positive class). We handle both cases.
             if isinstance(shap_values, list):
-                # We want the explanation for the "fraud" class (class 1)
                 shap_values_for_fraud = shap_values[1][0]
             else:
-                # It's a single array for the positive class
                 shap_values_for_fraud = shap_values[0]
             
-            # Combine feature names with their SHAP values
             feature_impacts = []
-            for i, feature_name in enumerate(preprocessor.get_feature_names_out()):
-                feature_impacts.append({
-                    "feature": feature_name,
-                    "shap_value": shap_values_for_fraud[i]
-                })
+            for i, feature_name in enumerate(feature_names):
+                feature_value = preprocessed_features_df.iloc[0, i]
+                shap_value = shap_values_for_fraud[i]
+                
+                # Only include features with a noticeable impact
+                if abs(shap_value) > 0.01:
+                    descriptive_name = feature_name_mapping.get(feature_name, feature_name)
+                    feature_impacts.append({
+                        "feature": descriptive_name,
+                        "value": feature_value,
+                        "shap_value": shap_value
+                    })
 
             # Sort by absolute SHAP value to find the most impactful features
             feature_impacts_sorted = sorted(feature_impacts, key=lambda x: abs(x['shap_value']), reverse=True)
             
             # Create a human-readable reason from the top 3 features
-            top_features = [f"{item['feature']} (SHAP: {item['shap_value']:.2f})" for item in feature_impacts_sorted[:3]]
-            human_readable_reason = "Fraud risk driven by: " + "; ".join(top_features)
+            top_features_desc = []
+            for item in feature_impacts_sorted[:3]:
+                # Add more context based on the feature and its value
+                desc = item['feature']
+                if 'Price' in desc and item['value'] < 1:
+                    desc += " (very low)"
+                elif 'Amount' in desc and item['value'] < 1:
+                     desc += " (very low)"
+                elif 'Cash' in desc and item['value'] == 1:
+                    desc = "Payment with Cash"
+                elif 'Time of Day' in desc and item['value'] > 0.5:
+                     desc = "Late Night Transaction"
+                top_features_desc.append(desc)
+
+            human_readable_reason = "High fraud risk detected. Key factors: " + "; ".join(top_features_desc) + "."
 
             explanation = Explanation(
                 human_readable_reason=human_readable_reason,
-                offending_products=[] # Placeholder for now
+                feature_importance=[FeatureImportance(**item) for item in feature_impacts_sorted],
+                offending_products=[]
             )
 
         # --- Response Formatting ---
