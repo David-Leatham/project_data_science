@@ -318,44 +318,43 @@ async def predict_fraud(request: FraudPredictionRequest):
         fraud_probability = classifier_model.predict_proba(preprocessed_features)[0][1]
         is_fraud = bool(fraud_probability >= CLASSIFICATION_THRESHOLD)
 
+        # --- SHAP Value Explanation (runs for every request) ---
+        shap_values = shap_explainer.shap_values(preprocessed_features_df)
+        
+        if isinstance(shap_values, list):
+            shap_values_for_fraud = shap_values[1][0]
+        else:
+            shap_values_for_fraud = shap_values[0]
+        
+        feature_impacts = []
+        for i, feature_name in enumerate(feature_names):
+            feature_value = preprocessed_features_df.iloc[0, i]
+            shap_value = shap_values_for_fraud[i]
+            
+            # Only include features with a noticeable impact
+            if abs(shap_value) > 0.01:
+                descriptive_name = feature_name_mapping.get(feature_name, feature_name)
+                feature_impacts.append({
+                    "feature": descriptive_name,
+                    "value": feature_value,
+                    "shap_value": shap_value
+                })
+
+        # Sort by absolute SHAP value for the detailed list
+        feature_importance_list = sorted(feature_impacts, key=lambda x: abs(x['shap_value']), reverse=True)
+
         # --- Initialize response variables ---
         estimated_damage = 0.0
-        explanation = None
-
+        human_readable_reason = ""
+        
         if is_fraud:
             # --- Regression Prediction ---
             predicted_raw_damage = regressor_model.predict(preprocessed_features)
             estimated_damage = round(max(0, predicted_raw_damage[0]), 2)
 
-            # --- SHAP Value Explanation ---
-            shap_values = shap_explainer.shap_values(preprocessed_features_df)
-            
-            if isinstance(shap_values, list):
-                shap_values_for_fraud = shap_values[1][0]
-            else:
-                shap_values_for_fraud = shap_values[0]
-            
-            feature_impacts = []
-            for i, feature_name in enumerate(feature_names):
-                feature_value = preprocessed_features_df.iloc[0, i]
-                shap_value = shap_values_for_fraud[i]
-                
-                # Only include features with a noticeable impact
-                if abs(shap_value) > 0.01:
-                    descriptive_name = feature_name_mapping.get(feature_name, feature_name)
-                    feature_impacts.append({
-                        "feature": descriptive_name,
-                        "value": feature_value,
-                        "shap_value": shap_value
-                    })
-
-            # Sort by absolute SHAP value to find the most impactful features
-            feature_impacts_sorted = sorted(feature_impacts, key=lambda x: abs(x['shap_value']), reverse=True)
-            
-            # Create a human-readable reason from the top 3 features
-            top_features_desc = []
-            for item in feature_impacts_sorted[:3]:
-                # Add more context based on the feature and its value
+            # Create a human-readable reason from the top 3 features pushing towards fraud
+            top_fraud_features_desc = []
+            for item in feature_importance_list[:3]:
                 desc = item['feature']
                 if 'Price' in desc and item['value'] < 1:
                     desc += " (very low)"
@@ -365,15 +364,33 @@ async def predict_fraud(request: FraudPredictionRequest):
                     desc = "Payment with Cash"
                 elif 'Time of Day' in desc and item['value'] > 0.5:
                      desc = "Late Night Transaction"
-                top_features_desc.append(desc)
+                top_fraud_features_desc.append(desc)
+            human_readable_reason = "High fraud risk detected. Key factors: " + "; ".join(top_fraud_features_desc) + "."
 
-            human_readable_reason = "High fraud risk detected. Key factors: " + "; ".join(top_features_desc) + "."
+        else: # NOT FRAUD
+            # Sort by SHAP value to find the most protective features (most negative)
+            protective_features_sorted = sorted(feature_impacts, key=lambda x: x['shap_value'])
+            
+            top_protective_features_desc = []
+            for item in protective_features_sorted[:3]:
+                desc = item['feature']
+                # Add context for non-fraudulent reasons
+                if 'Cash' in desc and item['value'] == 0:
+                    desc = "Payment with Card"
+                elif 'Time of Day' in desc and item['value'] < -0.5:
+                     desc = "Normal Business Hours"
+                elif 'Price' in desc and item['value'] > 10:
+                     desc += " (high)"
+                top_protective_features_desc.append(desc)
+            
+            human_readable_reason = "Low fraud risk. Key protective factors: " + "; ".join(top_protective_features_desc) + "."
 
-            explanation = Explanation(
-                human_readable_reason=human_readable_reason,
-                feature_importance=[FeatureImportance(**item) for item in feature_impacts_sorted],
-                offending_products=[]
-            )
+        # --- Construct Explanation Object ---
+        explanation = Explanation(
+            human_readable_reason=human_readable_reason,
+            feature_importance=[FeatureImportance(**item) for item in feature_importance_list],
+            offending_products=[]
+        )
 
         # --- Response Formatting ---
         response = FraudPrediction(
