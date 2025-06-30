@@ -17,68 +17,101 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import FunctionTransformer
 
 # ==============================================================================
-# Custom Transformer Classes (Copied from data_pipeline.py)
+# 1. BENUTZERDEFINIERTE TRANSFORMER-KLASSEN
+# Diese Klassen sind für die Merkmalsextraktion (Feature Engineering) zuständig
+# und wurden aus der ursprünglichen Datenpipeline (data_pipeline.py) übernommen.
 # ==============================================================================
 
-class TimeFeatureGenerator(BaseEstimator, TransformerMixin):
+class ZeitmerkmaleGenerator(BaseEstimator, TransformerMixin):
+    """
+    Erzeugt zeitbasierte Merkmale aus den Start- und Endzeitstempeln einer Transaktion.
+    Beispiele: Monat, Stunde, Wochentag, Dauer der Transaktion.
+    """
     def __init__(self):
         pass
     def fit(self, X, y=None):
+        # Dieser Transformer lernt keine Parameter aus den Daten.
         return self
     def transform(self, X, y=None):
-        df_transformed = pd.DataFrame(index=X.index)
-        transaction_start = pd.to_datetime(X['transaction_start'])
-        transaction_end = pd.to_datetime(X['transaction_end'])
-        duration = transaction_end - transaction_start
-        ft_duration_seconds_val = duration.dt.total_seconds()
-        df_transformed['ft_month'] = transaction_start.dt.month
-        df_transformed['ft_day'] = transaction_start.dt.day
-        df_transformed['ft_hour'] = transaction_start.dt.hour
-        df_transformed['ft_minute'] = transaction_start.dt.minute
-        df_transformed['ft_second'] = transaction_start.dt.second
-        df_transformed['ft_day_of_week'] = transaction_start.dt.dayofweek
-        df_transformed['ft_day_of_year'] = transaction_start.dt.dayofyear
-        df_transformed['ft_week_of_year'] = transaction_start.dt.isocalendar().week.astype(int)
-        df_transformed['ft_quarter'] = transaction_start.dt.quarter
-        df_transformed['ft_is_weekend'] = df_transformed['ft_day_of_week'].isin([5, 6]).astype(int)
-        df_transformed['ft_is_outside_normal_hours'] = ((df_transformed['ft_hour'] < 8) | (df_transformed['ft_hour'] >= 23)).astype(int)
-        df_transformed['ft_month_sin'] = np.sin(2 * np.pi * df_transformed['ft_month']/12)
-        df_transformed['ft_month_cos'] = np.cos(2 * np.pi * df_transformed['ft_month']/12)
-        df_transformed['ft_hour_sin'] = np.sin(2 * np.pi * df_transformed['ft_hour']/24)
-        df_transformed['ft_hour_cos'] = np.cos(2 * np.pi * df_transformed['ft_hour']/24)
-        df_transformed['ft_day_of_week_sin'] = np.sin(2 * np.pi * df_transformed['ft_day_of_week']/7)
-        df_transformed['ft_day_of_week_cos'] = np.cos(2 * np.pi * df_transformed['ft_day_of_week']/7)
-        days_in_year = transaction_start.dt.is_leap_year.map({True: 366, False: 365})
-        df_transformed['ft_day_of_year_sin'] = np.sin(2 * np.pi * df_transformed['ft_day_of_year']/days_in_year)
-        df_transformed['ft_day_of_year_cos'] = np.cos(2 * np.pi * df_transformed['ft_day_of_year']/days_in_year)
-        df_transformed['ft_duration_seconds_log'] = np.log1p(ft_duration_seconds_val)
-        df_transformed['ft_inter_weekend_outside_hours'] = df_transformed['ft_is_weekend'] * df_transformed['ft_is_outside_normal_hours']
-        df_transformed['ft_inter_hour_cos_x_dow_cos'] = df_transformed['ft_hour_cos'] * df_transformed['ft_day_of_week_cos']
+        # Erstellt einen neuen DataFrame, um die transformierten Daten zu speichern.
+        df_transformiert = pd.DataFrame(index=X.index)
+        
+        # Konvertiert die Zeitstempel-Strings in datetime-Objekte.
+        transaktion_start = pd.to_datetime(X['transaction_start'])
+        transaktion_ende = pd.to_datetime(X['transaction_end'])
+        
+        # Berechnet die Dauer der Transaktion in Sekunden.
+        dauer = transaktion_ende - transaktion_start
+        dauer_sekunden_val = dauer.dt.total_seconds()
+        
+        # Extrahiert grundlegende Zeitmerkmale.
+        df_transformiert['ft_month'] = transaktion_start.dt.month
+        df_transformiert['ft_day'] = transaktion_start.dt.day
+        df_transformiert['ft_hour'] = transaktion_start.dt.hour
+        df_transformiert['ft_minute'] = transaktion_start.dt.minute
+        df_transformiert['ft_second'] = transaktion_start.dt.second
+        df_transformiert['ft_day_of_week'] = transaktion_start.dt.dayofweek
+        df_transformiert['ft_day_of_year'] = transaktion_start.dt.dayofyear
+        df_transformiert['ft_week_of_year'] = transaktion_start.dt.isocalendar().week.astype(int)
+        df_transformiert['ft_quarter'] = transaktion_start.dt.quarter
+        
+        # Erzeugt binäre Merkmale (z.B. ob es Wochenende ist).
+        df_transformiert['ft_is_weekend'] = df_transformiert['ft_day_of_week'].isin([5, 6]).astype(int)
+        df_transformiert['ft_is_outside_normal_hours'] = ((df_transformiert['ft_hour'] < 8) | (df_transformiert['ft_hour'] >= 23)).astype(int)
+        
+        # Kodiert zyklische Merkmale mit Sinus/Kosinus-Transformation, um die Periodizität zu erfassen.
+        df_transformiert['ft_month_sin'] = np.sin(2 * np.pi * df_transformiert['ft_month']/12)
+        df_transformiert['ft_month_cos'] = np.cos(2 * np.pi * df_transformiert['ft_month']/12)
+        df_transformiert['ft_hour_sin'] = np.sin(2 * np.pi * df_transformiert['ft_hour']/24)
+        df_transformiert['ft_hour_cos'] = np.cos(2 * np.pi * df_transformiert['ft_hour']/24)
+        df_transformiert['ft_day_of_week_sin'] = np.sin(2 * np.pi * df_transformiert['ft_day_of_week']/7)
+        df_transformiert['ft_day_of_week_cos'] = np.cos(2 * np.pi * df_transformiert['ft_day_of_week']/7)
+        tage_im_jahr = transaktion_start.dt.is_leap_year.map({True: 366, False: 365})
+        df_transformiert['ft_day_of_year_sin'] = np.sin(2 * np.pi * df_transformiert['ft_day_of_year']/tage_im_jahr)
+        df_transformiert['ft_day_of_year_cos'] = np.cos(2 * np.pi * df_transformiert['ft_day_of_year']/tage_im_jahr)
+        
+        # Log-Transformation der Dauer, um extreme Werte abzuschwächen.
+        df_transformiert['ft_duration_seconds_log'] = np.log1p(dauer_sekunden_val)
+        
+        # Interaktionsmerkmale, die Kombinationen von Zeitmerkmalen erfassen.
+        df_transformiert['ft_inter_weekend_outside_hours'] = df_transformiert['ft_is_weekend'] * df_transformiert['ft_is_outside_normal_hours']
+        df_transformiert['ft_inter_hour_cos_x_dow_cos'] = df_transformiert['ft_hour_cos'] * df_transformiert['ft_day_of_week_cos']
+        
+        # Definiert die Liste der erzeugten Spaltennamen.
         self.feature_names_out_ = ['ft_month', 'ft_day', 'ft_hour', 'ft_minute', 'ft_second', 'ft_day_of_week', 'ft_day_of_year', 'ft_week_of_year', 'ft_quarter', 'ft_is_weekend', 'ft_is_outside_normal_hours', 'ft_month_sin', 'ft_month_cos', 'ft_hour_sin', 'ft_hour_cos', 'ft_day_of_week_sin', 'ft_day_of_week_cos', 'ft_day_of_year_sin', 'ft_day_of_year_cos', 'ft_duration_seconds_log', 'ft_inter_weekend_outside_hours', 'ft_inter_hour_cos_x_dow_cos']
-        return df_transformed[self.feature_names_out_]
+        
+        return df_transformiert[self.feature_names_out_]
+
     def get_feature_names_out(self, input_features=None):
         return self.feature_names_out_
 
-class FeedbackBinnerOHE(BaseEstimator, TransformerMixin):
+class FeedbackKategorisierer(BaseEstimator, TransformerMixin):
+    """
+    Kategorisiert das Kundenfeedback und kodiert es mittels One-Hot-Encoding.
+    """
     def __init__(self):
         self.categories_ = ['feedback_null', 'feedback_10', 'feedback_other']
         self.feature_names_out_ = [f"ft_{cat}" for cat in self.categories_]
     def fit(self, X, y=None):
         return self
-    def _categorize_feedback(self, feedback_value):
-        if pd.isnull(feedback_value): return 'feedback_null'
-        if feedback_value == 10.0: return 'feedback_10'
+    def _categorize_feedback(self, feedback_wert):
+        if pd.isnull(feedback_wert): return 'feedback_null'
+        if feedback_wert == 10.0: return 'feedback_10'
         return 'feedback_other'
     def transform(self, X, y=None):
-        feedback_series = X.iloc[:, 0]
-        categorized_feedback = feedback_series.apply(self._categorize_feedback)
-        categorized_feedback_type = pd.Categorical(categorized_feedback, categories=self.categories_)
-        dummies_df = pd.get_dummies(categorized_feedback_type, prefix='ft', dtype=int)
+        feedback_serie = X.iloc[:, 0]
+        kategorisiertes_feedback = feedback_serie.apply(self._categorize_feedback)
+        kategorisierter_typ = pd.Categorical(kategorisiertes_feedback, categories=self.categories_)
+        dummies_df = pd.get_dummies(kategorisierter_typ, prefix='ft', dtype=int)
         return dummies_df[self.feature_names_out_]
     def get_feature_names_out(self, input_features=None):
         return self.feature_names_out_
 
-class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
+class ErweiterteTransaktionspositionsMerkmale(BaseEstimator, TransformerMixin):
+    """
+    Berechnet aggregierte Merkmale aus den einzelnen Transaktionspositionen (Warenkorb).
+    Beispiele: Durchschnittlicher Preis pro Artikel, Anteil an Hochrisiko-Kategorien.
+    """
     def __init__(self, price_representation='actual', normalize=False):
         self.price_representation = price_representation
         self.normalize = normalize
@@ -97,52 +130,52 @@ class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
             return (price - price.min()) / diff if diff != 0 else np.zeros(len(price))
         return lines['price']
     
-    def _calculate_features(self, transaction_lines):
-        if not isinstance(transaction_lines, (list, np.ndarray)) or len(transaction_lines) == 0: return [0] * len(self.feature_names_out_)
-        lines = pd.DataFrame([line for line in transaction_lines if isinstance(line, dict)])
-        if lines.empty: return [0] * len(self.feature_names_out_)
+    def _calculate_features(self, transaktionszeilen):
+        if not isinstance(transaktionszeilen, (list, np.ndarray)) or len(transaktionszeilen) == 0: return [0] * len(self.feature_names_out_)
+        zeilen_df = pd.DataFrame([z for z in transaktionszeilen if isinstance(z, dict)])
+        if zeilen_df.empty: return [0] * len(self.feature_names_out_)
         
-        prices = self._handle_price_representation(lines)
-        avg_price = prices.mean()
-        median_price = prices.median()
+        preise = self._handle_price_representation(zeilen_df)
+        durchschnittlicher_preis = preise.mean()
+        median_preis = preise.median()
         
-        if 'expected_price' in lines and 'price' in lines and lines['expected_price'].notna().any():
-            price_delta = lines['price'] - lines['expected_price']
-            avg_price_delta = np.nanmean(price_delta)
-            max_price_delta = np.nanmax(price_delta)
+        if 'expected_price' in zeilen_df and 'price' in zeilen_df and zeilen_df['expected_price'].notna().any():
+            preis_delta = zeilen_df['price'] - zeilen_df['expected_price']
+            durchschnittliche_preis_delta = np.nanmean(preis_delta)
+            max_preis_delta = np.nanmax(preis_delta)
         else:
-            avg_price_delta = 0
-            max_price_delta = 0
+            durchschnittliche_preis_delta = 0
+            max_preis_delta = 0
 
-        avg_discount_ratio = np.nanmean(lines['discount_amount'] / lines['price']) if 'discount_amount' in lines and 'price' in lines and lines['price'].notna().any() else 0
+        durchschnittlicher_rabatt = np.nanmean(zeilen_df['discount_amount'] / zeilen_df['price']) if 'discount_amount' in zeilen_df and 'price' in zeilen_df and zeilen_df['price'].notna().any() else 0
         
-        if 'price_per_unit' in lines and 'category' in lines and lines['price_per_unit'].notna().any():
-            cat_means = lines.groupby('category')['price_per_unit'].transform('mean')
-            avg_unit_price_deviation = (lines['price_per_unit'] - cat_means).abs().mean()
+        if 'price_per_unit' in zeilen_df and 'category' in zeilen_df and zeilen_df['price_per_unit'].notna().any():
+            kategorie_mittelwerte = zeilen_df.groupby('category')['price_per_unit'].transform('mean')
+            durchschnittliche_einheitspreis_abweichung = (zeilen_df['price_per_unit'] - kategorie_mittelwerte).abs().mean()
         else: 
-            avg_unit_price_deviation = 0
+            durchschnittliche_einheitspreis_abweichung = 0
             
-        frac_high_risk = lines['category'].isin(self.high_risk_categories).mean() if 'category' in lines else 0
-        frac_age_restricted = lines['age_restricted'].astype(float).mean() if 'age_restricted' in lines else 0
-        mixed_age_flag = int(lines['age_restricted'].any() & ~lines['age_restricted'].all()) if 'age_restricted' in lines else 0
+        anteil_hohes_risiko = zeilen_df['category'].isin(self.high_risk_categories).mean() if 'category' in zeilen_df else 0
+        anteil_altersbeschraenkt = zeilen_df['age_restricted'].astype(float).mean() if 'age_restricted' in zeilen_df else 0
+        gemischtes_alter_flag = int(zeilen_df['age_restricted'].any() & ~zeilen_df['age_restricted'].all()) if 'age_restricted' in zeilen_df else 0
         
-        if 'category' in lines and 'age_restricted' in lines: 
-            risky_lines = lines[lines['category'].isin(self.high_risk_categories)]
-            missing_age_restriction = risky_lines['age_restricted'].eq(0).mean() if not risky_lines.empty else 0
+        if 'category' in zeilen_df and 'age_restricted' in zeilen_df: 
+            riskante_zeilen = zeilen_df[zeilen_df['category'].isin(self.high_risk_categories)]
+            fehlende_altersbeschraenkung = riskante_zeilen['age_restricted'].eq(0).mean() if not riskante_zeilen.empty else 0
         else: 
-            missing_age_restriction = 0
+            fehlende_altersbeschraenkung = 0
             
-        if 'product_launch_date' in lines and lines['product_launch_date'].notna().any():
-            days_since = (datetime.now() - pd.to_datetime(lines['product_launch_date'])).dt.days
-            new_product_ratio = (days_since < self.new_product_days).mean()
+        if 'product_launch_date' in zeilen_df and zeilen_df['product_launch_date'].notna().any():
+            tage_seit_einfuehrung = (datetime.now() - pd.to_datetime(zeilen_df['product_launch_date'])).dt.days
+            anteil_neue_produkte = (tage_seit_einfuehrung < self.new_product_days).mean()
         else: 
-            new_product_ratio = 0
+            anteil_neue_produkte = 0
             
-        present = set(lines['category'].unique()) if 'category' in lines else set()
-        category_features = [int(cat in present) for cat in self.all_categories]
+        vorhandene_kategorien = set(zeilen_df['category'].unique()) if 'category' in zeilen_df else set()
+        kategorie_merkmale = [int(cat in vorhandene_kategorien) for cat in self.all_categories]
         
-        features = [avg_price, median_price, avg_discount_ratio, avg_price_delta, avg_unit_price_deviation, frac_high_risk, frac_age_restricted, max_price_delta, mixed_age_flag, missing_age_restriction, new_product_ratio] + category_features
-        return [0 if pd.isna(x) else x for x in features]
+        merkmale = [durchschnittlicher_preis, median_preis, durchschnittlicher_rabatt, durchschnittliche_preis_delta, durchschnittliche_einheitspreis_abweichung, anteil_hohes_risiko, anteil_altersbeschraenkt, max_preis_delta, gemischtes_alter_flag, fehlende_altersbeschraenkung, anteil_neue_produkte] + kategorie_merkmale
+        return [0 if pd.isna(x) else x for x in merkmale]
 
     def fit(self, X, y=None):
         return self
@@ -150,92 +183,100 @@ class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
         if isinstance(X, pd.Series): X_df = X.to_frame()
         elif isinstance(X, np.ndarray): X_df = pd.DataFrame(X, columns=['transaction_lines_details'])
         else: X_df = X.copy()
-        stats = X_df.iloc[:, 0].apply(self._calculate_features)
-        df_transformed = pd.DataFrame(stats.tolist(), index=X_df.index, columns=self.feature_names_out_).fillna(0)
-        return df_transformed
+        statistiken = X_df.iloc[:, 0].apply(self._calculate_features)
+        df_transformiert = pd.DataFrame(statistiken.tolist(), index=X_df.index, columns=self.feature_names_out_).fillna(0)
+        return df_transformiert
     def get_feature_names_out(self, input_features=None):
         return self.feature_names_out_
 
 # ==============================================================================
-# Runtime Patches
+# 2. RUNTIME-PATCHES
+# Diese Anpassungen sind notwendig, um Kompatibilitätsprobleme beim Laden
+# der mit `joblib` gespeicherten Scikit-Learn-Objekte zu beheben.
 # ==============================================================================
 
-pipeline_module = types.ModuleType("pipeline")
-pipeline_module.TimeFeatureGenerator = TimeFeatureGenerator
-pipeline_module.FeedbackBinnerOHE = FeedbackBinnerOHE
-pipeline_module.EnhancedTransactionLineFeatures = EnhancedTransactionLineFeatures
-sys.modules["pipeline"] = pipeline_module
-sys.modules["pipeline.data_pipeline"] = pipeline_module
+# Patch 1: Erstellt ein "virtuelles" Modul, damit joblib die benutzerdefinierten Klassen findet.
+pipeline_modul = types.ModuleType("pipeline")
+pipeline_modul.TimeFeatureGenerator = ZeitmerkmaleGenerator
+pipeline_modul.FeedbackBinnerOHE = FeedbackKategorisierer
+pipeline_modul.EnhancedTransactionLineFeatures = ErweiterteTransaktionspositionsMerkmale
+sys.modules["pipeline"] = pipeline_modul
+sys.modules["pipeline.data_pipeline"] = pipeline_modul
 
-_original_ft_transform = FunctionTransformer.transform
-def _robust_ft_transform(self, X):
-    res = _original_ft_transform(self, X)
-    if hasattr(res, 'ndim') and res.ndim == 1:
-        res = res.reshape(-1, 1)
-    if isinstance(res, float):
-        res = np.array([[res]])
-    return res
-FunctionTransformer.transform = _robust_ft_transform
+# Patch 2: "Monkey-Patching" des FunctionTransformers, um Fehler bei der Verarbeitung
+# einzelner Datenzeilen zu vermeiden (behebt den 'dtype'-Fehler).
+original_ft_transform = FunctionTransformer.transform
+def robuster_ft_transform(self, X):
+    ergebnis = original_ft_transform(self, X)
+    if hasattr(ergebnis, 'ndim') and ergebnis.ndim == 1:
+        ergebnis = ergebnis.reshape(-1, 1)
+    if isinstance(ergebnis, float):
+        ergebnis = np.array([[ergebnis]])
+    return ergebnis
+FunctionTransformer.transform = robuster_ft_transform
 
-# --- Configuration ---
-MODEL_DIR = './weights'
+# --- Konfiguration ---
+MODELL_VERZEICHNIS = './weights'
 
-# --- Load Models, Preprocessor, and SHAP Explainer ---
+# --- Laden der Modelle, des Preprocessors und des SHAP-Explainers beim Start ---
 try:
-    classifier_list = glob.glob(os.path.join(MODEL_DIR, '*_model_*.cbm'))
-    if not classifier_list: raise FileNotFoundError("No classification model found.")
-    latest_classifier_path = max(classifier_list, key=os.path.getctime)
-    classifier_model = CatBoostClassifier()
-    classifier_model.load_model(latest_classifier_path)
+    # Laden des Klassifikationsmodells
+    klassifikator_liste = glob.glob(os.path.join(MODELL_VERZEICHNIS, '*_model_*.cbm'))
+    if not klassifikator_liste: raise FileNotFoundError("Kein Klassifikationsmodell gefunden.")
+    aktuellster_klassifikator_pfad = max(klassifikator_liste, key=os.path.getctime)
+    klassifikationsmodell = CatBoostClassifier()
+    klassifikationsmodell.load_model(aktuellster_klassifikator_pfad)
 
-    regressor_list = glob.glob(os.path.join(MODEL_DIR, '*_regressor_*.cbm'))
-    if not regressor_list: raise FileNotFoundError("No regression model found.")
-    latest_regressor_path = max(regressor_list, key=os.path.getctime)
-    regressor_model = CatBoostRegressor()
-    regressor_model.load_model(latest_regressor_path)
+    # Laden des Regressionsmodells
+    regressor_liste = glob.glob(os.path.join(MODELL_VERZEICHNIS, '*_regressor_*.cbm'))
+    if not regressor_liste: raise FileNotFoundError("Kein Regressionsmodell gefunden.")
+    aktuellster_regressor_pfad = max(regressor_liste, key=os.path.getctime)
+    regressionsmodell = CatBoostRegressor()
+    regressionsmodell.load_model(aktuellster_regressor_pfad)
 
-    preprocessor_list = glob.glob(os.path.join(MODEL_DIR, 'preprocessor*.joblib'))
-    if not preprocessor_list: raise FileNotFoundError("No preprocessor found.")
-    latest_preprocessor_path = max(preprocessor_list, key=os.path.getctime)
-    preprocessor = joblib.load(latest_preprocessor_path)
+    # Laden des Preprocessors
+    preprocessor_liste = glob.glob(os.path.join(MODELL_VERZEICHNIS, 'preprocessor*.joblib'))
+    if not preprocessor_liste: raise FileNotFoundError("Kein Preprocessor gefunden.")
+    aktuellster_preprocessor_pfad = max(preprocessor_liste, key=os.path.getctime)
+    preprocessor = joblib.load(aktuellster_preprocessor_pfad)
 
-    # Create the SHAP explainer at startup
-    shap_explainer = shap.TreeExplainer(classifier_model)
-    print("Models, preprocessor, and SHAP explainer loaded successfully.")
+    # Erstellen des SHAP-Explainers (nur einmal beim Start der Anwendung)
+    shap_explainer = shap.TreeExplainer(klassifikationsmodell)
+    print("Modelle, Preprocessor und SHAP-Explainer erfolgreich geladen.")
 
 except FileNotFoundError as e:
-    raise RuntimeError(f"Could not load model artifacts: {e}")
+    raise RuntimeError(f"Modell-Artefakte konnten nicht geladen werden: {e}")
 except Exception as e:
-    raise RuntimeError(f"An unexpected error occurred while loading artifacts: {e}")
+    raise RuntimeError(f"Ein unerwarteter Fehler beim Laden der Artefakte ist aufgetreten: {e}")
 
-# --- API Data Models ---
+# --- API-Datenmodelle (gemäß Spezifikation) ---
 
-class FeatureImportance(BaseModel):
+class Merkmalswichtigkeit(BaseModel):
     feature: str
     value: float
     shap_value: float
 
-class Explanation(BaseModel):
+class Erklaerung(BaseModel):
     human_readable_reason: Optional[str] = None
-    feature_importance: Optional[List[FeatureImportance]] = None
+    feature_importance: Optional[List[Merkmalswichtigkeit]] = None
     offending_products: Optional[List[str]] = None
 
-class FraudPrediction(BaseModel):
+class Betrugsvorhersage(BaseModel):
     version: str
     is_fraud: bool
     fraud_proba: Optional[float] = Field(None, ge=0, le=1)
     estimated_damage: Optional[float] = None
-    explanation: Optional[Explanation] = None
+    explanation: Optional[Erklaerung] = None
 
     @field_validator("version")
     @classmethod
     def validate_semantic_version(cls, v):
-        parts = v.split(".")
-        if len(parts) != 3 or not all(p.isdigit() for p in parts):
-            raise ValueError("Version must follow semantic versioning (x.y.z)")
+        teile = v.split(".")
+        if len(teile) != 3 or not all(p.isdigit() for p in teile):
+            raise ValueError("Version muss dem semantischen Versionierungsschema (x.y.z) folgen")
         return v
 
-class TransactionLine(BaseModel):
+class Transaktionszeile(BaseModel):
     id: int
     product_id: UUID
     timestamp: datetime
@@ -252,7 +293,7 @@ class TransactionLine(BaseModel):
     product_launch_date: Optional[datetime] = None
     price: Optional[float] = None
 
-class TransactionHeader(BaseModel):
+class Transaktionskopf(BaseModel):
     store_id: UUID
     cash_desk: int
     transaction_start: datetime
@@ -264,149 +305,150 @@ class TransactionHeader(BaseModel):
     opening_date: Optional[str] = 'UNKNOWN'
     n_lines: Optional[int] = None
 
-class FraudPredictionRequest(BaseModel):
-    transaction_header: TransactionHeader
-    transaction_lines: List[TransactionLine]
+class BetrugsvorhersageAnfrage(BaseModel):
+    transaction_header: Transaktionskopf
+    transaction_lines: List[Transaktionszeile]
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat(), UUID: lambda v: str(v)}
 
-# --- Feature Name Mapping for Human-Readable Explanations ---
-feature_name_mapping = {
-    'num_log_center__total_amount': 'Total Amount',
-    'num_log_center__n_lines': 'Number of Items',
-    'onehot_cat__payment_medium_CASH': 'Payment Method (Cash)',
-    'time_features__ft_hour_cos': 'Time of Day (Late Night/Early Morning)',
-    'transaction_lines_stats__ft_avg_line_price': 'Average Price per Item',
-    'transaction_lines_stats__ft_has_category_SNACKS': 'Contains Snacks',
-    'transaction_lines_stats__ft_has_category_CONVENIENCE': 'Contains Convenience Items',
-    'transaction_lines_stats__ft_has_category_FRUITS_VEGETABLES_PIECES': 'Contains Fruit/Veg (by piece)',
-    'time_features__ft_duration_seconds_log': 'Transaction Duration',
-    'transaction_lines_stats__ft_frac_high_risk': 'Fraction of High-Risk Items'
+# --- Mapping von technischen zu lesbaren Merkmalsnamen ---
+merkmalsnamen_mapping = {
+    'num_log_center__total_amount': 'Gesamtbetrag',
+    'num_log_center__n_lines': 'Anzahl der Artikel',
+    'onehot_cat__payment_medium_CASH': 'Zahlungsmethode (Bar)',
+    'time_features__ft_hour_cos': 'Tageszeit (Spät nachts/Früh morgens)',
+    'transaction_lines_stats__ft_avg_line_price': 'Durchschnittlicher Preis pro Artikel',
+    'transaction_lines_stats__ft_has_category_SNACKS': 'Enthält Snacks',
+    'transaction_lines_stats__ft_has_category_CONVENIENCE': 'Enthält Convenience-Produkte',
+    'transaction_lines_stats__ft_has_category_FRUITS_VEGETABLES_PIECES': 'Enthält Obst/Gemüse (Stück)',
+    'time_features__ft_duration_seconds_log': 'Transaktionsdauer',
+    'transaction_lines_stats__ft_frac_high_risk': 'Anteil an Hochrisiko-Artikeln'
 }
 
-# --- High-Risk Categories for Offending Products ---
-high_risk_categories = {'SNACKS', 'FRUITS_VEGETABLES_PIECES', 'CONVENIENCE'}
+# --- Kategorien mit hohem Risiko für auffällige Produkte ---
+hochrisiko_kategorien = {'SNACKS', 'FRUITS_VEGETABLES_PIECES', 'CONVENIENCE'}
 
-# --- FastAPI Application ---
+# --- FastAPI-Anwendung ---
 app = FastAPI(
-    title="SCO Fraud REST API",
-    description="A REST API for real-time Self-Checkout (SCO) fraud detection.",
+    title="SCO Betrugs-REST-API",
+    description="Eine REST-API zur Echtzeit-Betrugserkennung am Self-Checkout (SCO).",
     version="0.1.1"
 )
 
 API_VERSION = "0.1.1"
-CLASSIFICATION_THRESHOLD = 0.47
+KLASSIFIKATIONS_SCHWELLENWERT = 0.47
 
 @app.get("/", tags=["Health Check"])
 async def health_check():
+    """Gibt den Status und die Version der API zurück."""
     return {"status": "healthy", "version": API_VERSION}
 
-@app.post("/fraud-prediction", response_model=FraudPrediction, tags=["Fraud Prediction"])
-async def predict_fraud(request: FraudPredictionRequest):
+@app.post("/fraud-prediction", response_model=Betrugsvorhersage, tags=["Betrugsvorhersage"])
+async def predict_fraud(anfrage: BetrugsvorhersageAnfrage):
+    """Analysiert eine Transaktion auf potenziellen Betrug."""
     try:
-        # --- Data Preparation ---
-        header_data = request.transaction_header.dict()
-        header_data['n_lines'] = len(request.transaction_lines)
-        header_data['transaction_lines_details'] = [line.dict() for line in request.transaction_lines]
-        input_df = pd.DataFrame([header_data])
+        # --- 1. Datenaufbereitung ---
+        kopfdaten = anfrage.transaction_header.dict()
+        kopfdaten['n_lines'] = len(anfrage.transaction_lines)
+        kopfdaten['transaction_lines_details'] = [zeile.dict() for zeile in anfrage.transaction_lines]
+        eingabe_df = pd.DataFrame([kopfdaten])
 
-        # --- Preprocessing ---
-        preprocessed_features = preprocessor.transform(input_df)
-        feature_names = preprocessor.get_feature_names_out()
-        preprocessed_features_df = pd.DataFrame(preprocessed_features, columns=feature_names)
+        # --- 2. Vorverarbeitung (Feature Engineering) ---
+        vorverarbeitete_merkmale = preprocessor.transform(eingabe_df)
+        merkmalsnamen = preprocessor.get_feature_names_out()
+        vorverarbeitete_merkmale_df = pd.DataFrame(vorverarbeitete_merkmale, columns=merkmalsnamen)
 
-        # --- Classification Prediction ---
-        fraud_probability = classifier_model.predict_proba(preprocessed_features)[0][1]
-        is_fraud = bool(fraud_probability >= CLASSIFICATION_THRESHOLD)
+        # --- 3. Klassifikations-Vorhersage ---
+        betrugswahrscheinlichkeit = klassifikationsmodell.predict_proba(vorverarbeitete_merkmale)[0][1]
+        ist_betrug = bool(betrugswahrscheinlichkeit >= KLASSIFIKATIONS_SCHWELLENWERT)
 
-        # --- SHAP Value Explanation (runs for every request) ---
-        shap_values = shap_explainer.shap_values(preprocessed_features_df)
+        # --- 4. SHAP-Werte zur Erklärung berechnen (für jede Anfrage) ---
+        shap_werte = shap_explainer.shap_values(vorverarbeitete_merkmale_df)
         
-        if isinstance(shap_values, list):
-            shap_values_for_fraud = shap_values[1][0]
+        if isinstance(shap_werte, list):
+            shap_werte_fuer_betrug = shap_werte[1][0]
         else:
-            shap_values_for_fraud = shap_values[0]
+            shap_werte_fuer_betrug = shap_werte[0]
         
-        feature_impacts = []
-        for i, feature_name in enumerate(feature_names):
-            feature_value = preprocessed_features_df.iloc[0, i]
-            shap_value = shap_values_for_fraud[i]
+        merkmalseinfluesse = []
+        for i, merkmal_name in enumerate(merkmalsnamen):
+            merkmal_wert = vorverarbeitete_merkmale_df.iloc[0, i]
+            shap_wert = shap_werte_fuer_betrug[i]
             
-            if abs(shap_value) > 0.01:
-                descriptive_name = feature_name_mapping.get(feature_name, feature_name)
-                feature_impacts.append({
-                    "feature": descriptive_name,
-                    "value": feature_value,
-                    "shap_value": shap_value
+            if abs(shap_wert) > 0.01:
+                lesbarer_name = merkmalsnamen_mapping.get(merkmal_name, merkmal_name)
+                merkmalseinfluesse.append({
+                    "feature": lesbarer_name,
+                    "value": merkmal_wert,
+                    "shap_value": shap_wert
                 })
 
-        feature_importance_list = sorted(feature_impacts, key=lambda x: abs(x['shap_value']), reverse=True)
+        merkmalswichtigkeit_liste = sorted(merkmalseinfluesse, key=lambda x: abs(x['shap_value']), reverse=True)
 
-        # --- Initialize response variables ---
-        estimated_damage = 0.0
-        human_readable_reason = ""
-        offending_products = []
+        # --- 5. Initialisierung der Antwortvariablen ---
+        geschaetzter_schaden = 0.0
+        lesbare_begruendung_text = ""
+        auffaellige_produkte = []
         
-        if is_fraud:
-            # --- Regression Prediction ---
-            predicted_raw_damage = regressor_model.predict(preprocessed_features)
-            estimated_damage = round(max(0, predicted_raw_damage[0]), 2)
+        if ist_betrug:
+            # --- Regressions-Vorhersage für den Schaden ---
+            vorhergesagter_roh_schaden = regressionsmodell.predict(vorverarbeitete_merkmale)
+            geschaetzter_schaden = round(max(0, vorhergesagter_roh_schaden[0]), 2)
 
-            # --- Identify Offending Products ---
-            offending_products_set = set()
-            for line in request.transaction_lines:
-                if line.category in high_risk_categories:
-                    offending_products_set.add(line.category)
-            offending_products = list(offending_products_set)
+            # --- Identifizierung der auffälligen Produkte ---
+            auffaellige_produkte_set = set()
+            for zeile in anfrage.transaction_lines:
+                if zeile.category in hochrisiko_kategorien:
+                    auffaellige_produkte_set.add(zeile.category)
+            auffaellige_produkte = list(auffaellige_produkte_set)
 
-            # --- Create Human-Readable Reason ---
-            top_fraud_features_desc = []
-            for item in feature_importance_list[:3]:
+            # --- Erstellung der lesbaren Begründung ---
+            top_betrugsmerkmale_desc = []
+            for item in merkmalswichtigkeit_liste[:3]:
                 desc = item['feature']
-                if 'Price' in desc and item['value'] < 1: desc += " (very low)"
-                elif 'Amount' in desc and item['value'] < 1: desc += " (very low)"
-                elif 'Cash' in desc and item['value'] == 1: desc = "Payment with Cash"
-                elif 'Time of Day' in desc and item['value'] > 0.5: desc = "Late Night Transaction"
-                top_fraud_features_desc.append(desc)
+                if 'Preis' in desc and item['value'] < 1: desc += " (sehr niedrig)"
+                elif 'Betrag' in desc and item['value'] < 1: desc += " (sehr niedrig)"
+                elif 'Bar' in desc and item['value'] == 1: desc = "Barzahlung"
+                elif 'Tageszeit' in desc and item['value'] > 0.5: desc = "Späte Transaktion"
+                top_betrugsmerkmale_desc.append(desc)
             
-            human_readable_reason = "High fraud risk detected. Key factors: " + "; ".join(top_fraud_features_desc) + "."
-            if offending_products:
-                human_readable_reason += f" Suspicious item categories include: {', '.join(offending_products)}."
+            lesbare_begruendung_text = "Hohes Betrugsrisiko erkannt. Hauptfaktoren: " + "; ".join(top_betrugsmerkmale_desc) + "."
+            if auffaellige_produkte:
+                lesbare_begruendung_text += f" Verdächtige Produktkategorien: {', '.join(auffaellige_produkte)}."
 
-        else: # NOT FRAUD
-            # Sort by SHAP value to find the most protective features (most negative)
-            protective_features_sorted = sorted(feature_impacts, key=lambda x: x['shap_value'])
+        else: # KEIN BETRUG
+            schuetzende_merkmale_sortiert = sorted(merkmalseinfluesse, key=lambda x: x['shap_value'])
             
-            top_protective_features_desc = []
-            for item in protective_features_sorted[:3]:
+            top_schuetzende_merkmale_desc = []
+            for item in schuetzende_merkmale_sortiert[:3]:
                 desc = item['feature']
-                if 'Cash' in desc and item['value'] == 0: desc = "Payment with Card"
-                elif 'Time of Day' in desc and item['value'] < -0.5: desc = "Normal Business Hours"
-                elif 'Price' in desc and item['value'] > 10: desc += " (high)"
-                top_protective_features_desc.append(desc)
+                if 'Bar' in desc and item['value'] == 0: desc = "Kartenzahlung"
+                elif 'Tageszeit' in desc and item['value'] < -0.5: desc = "Normale Geschäftszeiten"
+                elif 'Preis' in desc and item['value'] > 10: desc += " (hoch)"
+                top_schuetzende_merkmale_desc.append(desc)
             
-            human_readable_reason = "Low fraud risk. Key protective factors: " + "; ".join(top_protective_features_desc) + "."
+            lesbare_begruendung_text = "Geringes Betrugsrisiko. Hauptfaktoren: " + "; ".join(top_schuetzende_merkmale_desc) + "."
 
-        # --- Construct Explanation Object ---
-        explanation = Explanation(
-            human_readable_reason=human_readable_reason,
-            feature_importance=[FeatureImportance(**item) for item in feature_importance_list],
-            offending_products=offending_products
+        # --- Erklärungsobjekt erstellen ---
+        erklaerung = Erklaerung(
+            human_readable_reason=lesbare_begruendung_text,
+            feature_importance=[Merkmalswichtigkeit(**item) for item in merkmalswichtigkeit_liste],
+            offending_products=auffaellige_produkte
         )
 
-        # --- Response Formatting ---
-        response = FraudPrediction(
+        # --- Finale Antwort formatieren ---
+        antwort = Betrugsvorhersage(
             version=API_VERSION,
-            is_fraud=is_fraud,
-            fraud_proba=round(fraud_probability, 4),
-            estimated_damage=estimated_damage,
-            explanation=explanation,
+            is_fraud=ist_betrug,
+            fraud_proba=round(betrugswahrscheinlichkeit, 4),
+            estimated_damage=geschaetzter_schaden,
+            explanation=erklaerung,
         )
 
-        return response
+        return antwort
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"An internal error occurred: {e}")
+        raise HTTPException(status_code=500, detail=f"Ein interner Fehler ist aufgetreten: {e}")
