@@ -9,7 +9,7 @@ from uuid import UUID
 import joblib
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
+from catboost import CatBoostClassifier, CatBoostRegressor
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -96,7 +96,6 @@ class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
             return (price - price.min()) / diff if diff != 0 else np.zeros(len(price))
         return lines['price']
     
-    # THIS METHOD IS REPAIRED
     def _calculate_features(self, transaction_lines):
         if not isinstance(transaction_lines, (list, np.ndarray)) or len(transaction_lines) == 0: return [0] * len(self.feature_names_out_)
         lines = pd.DataFrame([line for line in transaction_lines if isinstance(line, dict)])
@@ -106,7 +105,6 @@ class EnhancedTransactionLineFeatures(BaseEstimator, TransformerMixin):
         avg_price = prices.mean()
         median_price = prices.median()
         
-        # Defensive check for price delta calculations
         if 'expected_price' in lines and 'price' in lines and lines['expected_price'].notna().any():
             price_delta = lines['price'] - lines['expected_price']
             avg_price_delta = np.nanmean(price_delta)
@@ -183,18 +181,27 @@ MODEL_DIR = './weights'
 
 # --- Load Model and Preprocessor ---
 try:
-    model_list = glob.glob(os.path.join(MODEL_DIR, '*.cbm'))
-    if not model_list:
-        raise FileNotFoundError("No CatBoost model file found in the 'weights' directory.")
-    latest_model_path = max(model_list, key=os.path.getctime)
+    # Load Classifier
+    classifier_list = glob.glob(os.path.join(MODEL_DIR, '*_model_*.cbm'))
+    if not classifier_list:
+        raise FileNotFoundError("No CatBoost classification model file found in the 'weights' directory.")
+    latest_classifier_path = max(classifier_list, key=os.path.getctime)
+    classifier_model = CatBoostClassifier()
+    classifier_model.load_model(latest_classifier_path)
 
-    preprocessor_list = glob.glob(os.path.join(MODEL_DIR, '*.joblib'))
+    # Load Regressor
+    regressor_list = glob.glob(os.path.join(MODEL_DIR, '*_regressor_*.cbm'))
+    if not regressor_list:
+        raise FileNotFoundError("No CatBoost regression model file found in the 'weights' directory.")
+    latest_regressor_path = max(regressor_list, key=os.path.getctime)
+    regressor_model = CatBoostRegressor()
+    regressor_model.load_model(latest_regressor_path)
+
+    # Load Preprocessor
+    preprocessor_list = glob.glob(os.path.join(MODEL_DIR, 'preprocessor*.joblib'))
     if not preprocessor_list:
         raise FileNotFoundError("No preprocessor file found in the 'weights' directory.")
     latest_preprocessor_path = max(preprocessor_list, key=os.path.getctime)
-
-    model = CatBoostClassifier()
-    model.load_model(latest_model_path)
     preprocessor = joblib.load(latest_preprocessor_path)
 
 except FileNotFoundError as e:
@@ -267,7 +274,7 @@ app = FastAPI(
 )
 
 API_VERSION = "0.1.1"
-OPTIMAL_THRESHOLD = 0.47
+CLASSIFICATION_THRESHOLD = 0.47
 
 @app.get("/", tags=["Health Check"])
 async def health_check():
@@ -276,29 +283,39 @@ async def health_check():
 @app.post("/fraud-prediction", response_model=FraudPrediction, tags=["Fraud Prediction"])
 async def predict_fraud(request: FraudPredictionRequest):
     try:
+        # --- Data Preparation ---
         header_data = request.transaction_header.dict()
         header_data['n_lines'] = len(request.transaction_lines)
         header_data['transaction_lines_details'] = [line.dict() for line in request.transaction_lines]
         input_df = pd.DataFrame([header_data])
 
+        # --- Preprocessing ---
         preprocessed_features = preprocessor.transform(input_df)
-        fraud_probability = model.predict_proba(preprocessed_features)[0][1]
-        is_fraud = bool(fraud_probability >= OPTIMAL_THRESHOLD)
 
+        # --- Classification Prediction ---
+        fraud_probability = classifier_model.predict_proba(preprocessed_features)[0][1]
+        is_fraud = bool(fraud_probability >= CLASSIFICATION_THRESHOLD)
+
+        # --- Regression Prediction (if fraud is detected) ---
+        estimated_damage = 0.0
+        explanation = None
+        if is_fraud:
+            predicted_raw_damage = regressor_model.predict(preprocessed_features)
+            # Ensure damage is not negative and round to 2 decimal places
+            estimated_damage = round(max(0, predicted_raw_damage[0]), 2)
+            explanation = Explanation(
+                human_readable_reason="The transaction pattern matches characteristics associated with fraudulent activities.",
+                offending_products=[]
+            )
+
+        # --- Response Formatting ---
         response = FraudPrediction(
             version=API_VERSION,
             is_fraud=is_fraud,
             fraud_proba=round(fraud_probability, 4),
-            estimated_damage=None,
-            explanation=None,
+            estimated_damage=estimated_damage,
+            explanation=explanation,
         )
-
-        if is_fraud:
-            response.explanation = Explanation(
-                human_readable_reason="The transaction pattern matches characteristics associated with fraudulent activities.",
-                offending_products=[]
-            )
-            response.estimated_damage = request.transaction_header.total_amount
 
         return response
 
