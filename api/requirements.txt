@@ -13,6 +13,7 @@ pandas
 numpy
 joblib
 imbalanced-learn
+shap
 
 # Visualization (for notebook reproducibility)
 matplotlib
