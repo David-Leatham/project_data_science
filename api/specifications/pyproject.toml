@@ -1,0 +1,8 @@
+[project]
+name = "SCO-fraud-REST-api"
+version = "0.1.1"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.11.5",
+    "requests>=2.32.3",
+]
