@@ -1,0 +1,20 @@
+# FastAPI web server
+fastapi
+uvicorn
+
+# Data validation and HTTP client
+pydantic>=2.11.5
+requests>=2.32.3
+
+# Machine Learning and Data Processing
+scikit-learn
+catboost
+pandas
+numpy
+joblib
+imbalanced-learn
+shap
+
+# Visualization (for notebook reproducibility)
+matplotlib
+seaborn

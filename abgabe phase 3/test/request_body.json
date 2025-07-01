@@ -1,0 +1,41 @@
+{
+  "transaction_header": {
+    "store_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "cash_desk": 1,
+    "transaction_start": "2023-09-13T17:29:51",
+    "transaction_end": "2023-09-13T17:31:56",
+    "total_amount": 29.90,
+    "payment_medium": "CREDIT_CARD",
+    "customer_feedback": 9,
+    "location": "STORE_FRONT",
+    "opening_date": "2010"
+  },
+  "transaction_lines": [
+    {
+      "id": 1,
+      "product_id": "87654321-4321-8765-cbaa-210987654321",
+      "timestamp": "2023-09-13T17:30:00",
+      "pieces_or_weight": 2.0,
+      "sales_price": 15.50,
+      "was_voided": false,
+      "camera_product_similar": true,
+      "camera_certainty": 0.95,
+      "category": "PERSONAL_CARE",
+      "price": 15.50,
+      "age_restricted": false
+    },
+    {
+      "id": 2,
+      "product_id": "98765432-1234-5678-abcd-321098765432",
+      "timestamp": "2023-09-13T17:30:15",
+      "pieces_or_weight": 1.0,
+      "sales_price": 14.40,
+      "was_voided": false,
+      "camera_product_similar": false,
+      "camera_certainty": 0.70,
+      "category": "SNACKS",
+      "price": 14.40,
+      "age_restricted": false
+    }
+  ]
+}
