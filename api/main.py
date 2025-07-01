@@ -317,13 +317,18 @@ merkmalsnamen_mapping = {
     'num_log_center__total_amount': 'Gesamtbetrag',
     'num_log_center__n_lines': 'Anzahl der Artikel',
     'onehot_cat__payment_medium_CASH': 'Zahlungsmethode (Bar)',
+    'onehot_cat__payment_medium_CREDIT_CARD': 'Zahlungsmethode (Kreditkarte)',
     'time_features__ft_hour_cos': 'Tageszeit (Spät nachts/Früh morgens)',
+    'time_features__ft_hour': 'Stunde der Transaktion',
     'transaction_lines_stats__ft_avg_line_price': 'Durchschnittlicher Preis pro Artikel',
     'transaction_lines_stats__ft_has_category_SNACKS': 'Enthält Snacks',
     'transaction_lines_stats__ft_has_category_CONVENIENCE': 'Enthält Convenience-Produkte',
     'transaction_lines_stats__ft_has_category_FRUITS_VEGETABLES_PIECES': 'Enthält Obst/Gemüse (Stück)',
     'time_features__ft_duration_seconds_log': 'Transaktionsdauer',
-    'transaction_lines_stats__ft_frac_high_risk': 'Anteil an Hochrisiko-Artikeln'
+    'transaction_lines_stats__ft_frac_high_risk': 'Anteil an Hochrisiko-Artikeln',
+    'feedback_processing__ft_feedback_null': 'Kein Kundenfeedback',
+    'feedback_processing__ft_feedback_10': 'Kundenfeedback (Perfekt)',
+    'time_features__ft_day_of_week': 'Wochentag'
 }
 
 # --- Kategorien mit hohem Risiko für auffällige Produkte ---
